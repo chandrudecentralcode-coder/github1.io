@@ -6,11 +6,14 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#b91c1c">
+    <meta name="description" content="Fast and efficient HR & Attendance Management System">
     <title>Technique Engineers — HR & Attendance</title>
     <link rel="icon" type="image/png" href="https://www.techniqueengineers.com/assets/images/technique-engineers-logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+        /* CRITICAL CSS - Inline for faster initial render */
         :root {
             --primary: #b91c1c;
             --primary-light: #ef4444;
@@ -1238,10 +1241,9 @@
 
                     <div class="card">
                         <div class="card-header">Clock In / Out</div>
-                        <div style="text-align:center; margin-bottom:1rem; position:relative;">
+                        <div style="text-align:center; margin-bottom:1rem;">
                             <video id="vid" autoplay muted playsinline style="width:100%; max-width:480px; border-radius:var(--radius); background:#000;"></video>
                             <canvas id="can" class="hidden"></canvas>
-                            <button onclick="flipOfficeCamera()" style="position:absolute; top:0.5rem; right:calc(50% - 240px + 0.5rem); background:rgba(0,0,0,0.5); color:white; border:none; border-radius:50%; width:40px; height:40px; font-size:1.2rem; cursor:pointer; display:flex; align-items:center; justify-content:center;" title="Flip Camera">&#128260;</button>
                             <div id="camera-off-msg" class="hidden" style="padding:2rem 1rem; background:var(--bg); border-radius:var(--radius); margin-top:0.5rem;">
                                 <p style="color:var(--success); font-weight:600; font-size:0.95rem; margin-bottom:0.5rem;">Attendance recorded successfully!</p>
                                 <p style="color:var(--text-muted); font-size:0.8rem; margin-bottom:0.75rem;">Camera has been turned off to save battery.</p>
@@ -1951,7 +1953,7 @@
 // ============================================================
 // CONFIG & STATE
 // ============================================================
-const API = "https://script.google.com/macros/s/AKfycbzX94ixMeDm6GI2k6bZh4fN7P12Q_Ab1x7NjATCadxx3RuGyWZRkIvBK73zOs0jEOGvUA/exec";
+const API = "https://script.google.com/macros/s/AKfycbyv7Bkj6AqJOt1L15stczhvQ2Am1J-7q5W-hHf73KNiZs1xiNbR752ZWVwJ2Xuy9ko/exec";
 
 let user = null;
 let allUsersCache = [];
@@ -2189,26 +2191,15 @@ function nav(page, el) {
 // ============================================================
 // CAMERA
 // ============================================================
-let officeFacingMode = 'user';
-
 function startCamera() {
     const vid = document.getElementById('vid');
     if (vid) vid.style.display = '';
     const camMsg = document.getElementById('camera-off-msg');
     if (camMsg) camMsg.classList.add('hidden');
 
-    if (vid && vid.srcObject) {
-        vid.srcObject.getTracks().forEach(t => t.stop());
-    }
-
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: officeFacingMode } })
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
         .then(s => { if (vid) vid.srcObject = s; })
         .catch(() => toast('Could not access camera. Check permissions.', 'warning'));
-}
-
-function flipOfficeCamera() {
-    officeFacingMode = officeFacingMode === 'user' ? 'environment' : 'user';
-    startCamera();
 }
 
 function stopCamera() {
@@ -2226,6 +2217,46 @@ function restartCamera() {
 // ============================================================
 // ATTENDANCE (CLOCK IN/OUT)
 // ============================================================
+
+/**
+ * Compress and resize image for faster upload
+ * @param {string} dataURL - Base64 image data
+ * @param {number} maxWidth - Maximum width
+ * @param {number} maxHeight - Maximum height
+ * @param {number} quality - JPEG quality (0.1-1.0)
+ */
+function compressImage(dataURL, maxWidth = 640, maxHeight = 480, quality = 0.5) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            
+            // Calculate new dimensions maintaining aspect ratio
+            if (width > height) {
+                if (width > maxWidth) {
+                    height = Math.round(height * maxWidth / width);
+                    width = maxWidth;
+                }
+            } else {
+                if (height > maxHeight) {
+                    width = Math.round(width * maxHeight / height);
+                    height = maxHeight;
+                }
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve(dataURL); // Fallback to original on error
+        img.src = dataURL;
+    });
+}
+
 async function punch(type) {
     const statusEl = document.getElementById('punch-status');
     statusEl.textContent = 'Getting location...';
@@ -2240,7 +2271,9 @@ async function punch(type) {
                 c.width = v.videoWidth;
                 c.height = v.videoHeight;
                 c.getContext('2d').drawImage(v, 0, 0);
-                imageData = c.toDataURL('image/jpeg', 0.5);
+                const originalData = c.toDataURL('image/jpeg', 0.7);
+                // Compress image for faster upload (max 640x480, quality 0.5)
+                imageData = await compressImage(originalData, 640, 480, 0.5);
             }
         } catch (camErr) {
             console.warn('Camera capture failed:', camErr);
@@ -2399,26 +2432,32 @@ async function loadEmployeeDashboard() {
         dashStatsGrid.insertAdjacentHTML('beforeend', fieldCards);
     }
 
-    // Chart
-    destroyChart('my-attendance-chart');
-    const ctx = document.getElementById('my-attendance-chart').getContext('2d');
-    chartsMap['my-attendance-chart'] = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: d.recentAttendance.map(a => a.date),
-            datasets: [{
-                label: 'Work Hours',
-                data: d.recentAttendance.map(a => a.duration),
-                backgroundColor: d.recentAttendance.map(a => a.status === 'Late' ? '#f59e0b' : '#b91c1c'),
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true, title: { display: true, text: 'Hours' } } }
+    // Chart - Lazy load Chart.js (non-blocking)
+    loadChartLibrary().then(() => {
+        if (!window.Chart) {
+            console.warn('Chart.js not loaded, skipping chart render');
+            return;
         }
+        destroyChart('my-attendance-chart');
+        const ctx = document.getElementById('my-attendance-chart').getContext('2d');
+        chartsMap['my-attendance-chart'] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: d.recentAttendance.map(a => a.date),
+                datasets: [{
+                    label: 'Work Hours',
+                    data: d.recentAttendance.map(a => a.duration),
+                    backgroundColor: d.recentAttendance.map(a => a.status === 'Late' ? '#f59e0b' : '#b91c1c'),
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, title: { display: true, text: 'Hours' } } }
+            }
+        });
     });
 }
 
@@ -2492,13 +2531,15 @@ async function subExp() {
 
     const reader = new FileReader();
     reader.onload = async e => {
+        // Compress receipt image for faster upload
+        const compressedData = await compressImage(e.target.result, 800, 600, 0.6);
         const res = await post({
             type: 'EXPENSE',
             name: user.email,
             category: document.getElementById('exp-cat').value,
             details: desc,
             amount: amt,
-            receipt: e.target.result
+            receipt: compressedData
         });
 
         if (res.status === 'success') {
@@ -3302,15 +3343,22 @@ function filterClaims() {
     const counts = { Pending: 0, Approved: 0, Rejected: 0 };
     allClaimsCache.forEach(e => { if (counts.hasOwnProperty(e.status)) counts[e.status]++; });
 
-    destroyChart('claims-chart');
-    const ctx = document.getElementById('claims-chart').getContext('2d');
-    chartsMap['claims-chart'] = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: Object.keys(counts),
-            datasets: [{ data: Object.values(counts), backgroundColor: ['#f59e0b', '#10b981', '#ef4444'] }]
-        },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+    // Lazy load Chart.js (non-blocking)
+    loadChartLibrary().then(() => {
+        if (!window.Chart) {
+            console.warn('Chart.js not loaded, skipping chart render');
+            return;
+        }
+        destroyChart('claims-chart');
+        const ctx = document.getElementById('claims-chart').getContext('2d');
+        chartsMap['claims-chart'] = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(counts),
+                datasets: [{ data: Object.values(counts), backgroundColor: ['#f59e0b', '#10b981', '#ef4444'] }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        });
     });
 
     let h = `<table><tr><th>Employee</th><th>Date</th><th>Receipt</th><th>Category</th><th>Details</th><th>Amount</th><th>Status</th><th>Actions</th></tr>`;
@@ -3352,15 +3400,22 @@ async function loadAdminLeave() {
     ]);
 
     if (statsRes.status === 'success') {
-        destroyChart('leave-chart');
-        const ctx = document.getElementById('leave-chart').getContext('2d');
-        chartsMap['leave-chart'] = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: Object.keys(statsRes.stats),
-                datasets: [{ data: Object.values(statsRes.stats), backgroundColor: ['#f59e0b', '#10b981', '#ef4444'] }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        // Lazy load Chart.js (non-blocking)
+        loadChartLibrary().then(() => {
+            if (!window.Chart) {
+                console.warn('Chart.js not loaded, skipping chart render');
+                return;
+            }
+            destroyChart('leave-chart');
+            const ctx = document.getElementById('leave-chart').getContext('2d');
+            chartsMap['leave-chart'] = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(statsRes.stats),
+                    datasets: [{ data: Object.values(statsRes.stats), backgroundColor: ['#f59e0b', '#10b981', '#ef4444'] }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
         });
     }
 
@@ -3421,20 +3476,26 @@ async function loadLogs() {
     ]);
 
     if (statsRes.status === 'success') {
-        destroyChart('logs-chart');
-        const ctx = document.getElementById('logs-chart').getContext('2d');
-        const labels = Object.keys(statsRes.dailyStats).reverse();
-        const data = Object.values(statsRes.dailyStats).reverse();
-        chartsMap['logs-chart'] = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels,
-                datasets: [{
-                    label: 'Daily Check-ins',
-                    data,
-                    borderColor: '#b91c1c',
-                    backgroundColor: 'rgba(185,28,28,0.1)',
-                    fill: true,
+        // Lazy load Chart.js (non-blocking)
+        loadChartLibrary().then(() => {
+            if (!window.Chart) {
+                console.warn('Chart.js not loaded, skipping chart render');
+                return;
+            }
+            destroyChart('logs-chart');
+            const ctx = document.getElementById('logs-chart').getContext('2d');
+            const labels = Object.keys(statsRes.dailyStats).reverse();
+            const data = Object.values(statsRes.dailyStats).reverse();
+            chartsMap['logs-chart'] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Daily Check-ins',
+                        data,
+                        borderColor: '#b91c1c',
+                        backgroundColor: 'rgba(185,28,28,0.1)',
+                        fill: true,
                     tension: 0.3
                 }]
             },
@@ -3444,6 +3505,7 @@ async function loadLogs() {
                 plugins: { legend: { display: false } },
                 scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
             }
+            });
         });
     }
 
@@ -3790,7 +3852,7 @@ function navMobile(page) {
 // ============================================================
 // FIELD EMPLOYEE — CAMERA
 // ============================================================
-let fieldFacingMode = 'user'; // front camera default for field
+let fieldFacingMode = 'environment'; // back camera default for field
 
 function startFieldCamera() {
     const vid = document.getElementById('field-vid');
@@ -3870,7 +3932,9 @@ async function fieldSmartPunch() {
             c.width = v.videoWidth;
             c.height = v.videoHeight;
             c.getContext('2d').drawImage(v, 0, 0);
-            imageData = c.toDataURL('image/jpeg', 0.5);
+            const originalData = c.toDataURL('image/jpeg', 0.7);
+            // Compress image for faster upload
+            imageData = await compressImage(originalData, 640, 480, 0.5);
         } catch (e) {}
 
         const payload = {
@@ -4242,6 +4306,71 @@ async function adminFieldDayDetail(email, date) {
     overlay.innerHTML = html;
     document.body.appendChild(overlay);
 }
+
+// Lazy load Chart.js only when needed
+let chartLibraryLoaded = false;
+let chartLibraryLoading = false;
+
+function loadChartLibrary() {
+    if (chartLibraryLoaded || chartLibraryLoading) return Promise.resolve();
+    chartLibraryLoading = true;
+    return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+        script.async = true;
+        script.onload = () => {
+            chartLibraryLoaded = true;
+            resolve();
+        };
+        script.onerror = () => {
+            chartLibraryLoading = false;
+            resolve(); // Continue even if chart fails
+        };
+        document.head.appendChild(script);
+    });
+}
+
+// Performance: Debounce function for scroll/search
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Performance: Throttle function for resize/scroll events
+function throttle(func, limit) {
+    let inThrottle;
+    return function(...args) {
+        if (!inThrottle) {
+            func.apply(this, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    };
+}
+
+// Initialize lazy loading for charts when visible
+const observerOptions = { rootMargin: '200px' };
+const chartObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            loadChartLibrary();
+            chartObserver.unobserve(entry.target);
+        }
+    });
+}, observerOptions);
+
+// Observe chart containers
+document.addEventListener('DOMContentLoaded', () => {
+    const chartCanvases = document.querySelectorAll('canvas[id*="chart"]');
+    chartCanvases.forEach(canvas => chartObserver.observe(canvas));
+});
 </script>
 
 </body>
