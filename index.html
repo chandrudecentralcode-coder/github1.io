@@ -1519,6 +1519,7 @@
                     <button class="sub-tab" onclick="switchAdminTab('a-holidays', this)">Holidays</button>
                     <button class="sub-tab" onclick="switchAdminTab('a-departments', this)">Departments</button>
                     <button class="sub-tab" onclick="switchAdminTab('a-fieldactivity', this)">Field Activity</button>
+                    <button class="sub-tab" onclick="switchAdminTab('a-jsonstorage', this)">JSON Storage</button>
                 </div>
 
                 <!-- ADMIN: USERS -->
@@ -1899,6 +1900,106 @@
                         <div class="table-wrap" id="admin-field-detail-table"></div>
                     </div>
                 </div>
+
+                <!-- ADMIN: JSON STORAGE -->
+                <div id="a-jsonstorage" class="admin-section" style="display:none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <span>Google Drive JSON Storage</span>
+                            <div class="btn-group">
+                                <button class="btn-sm btn-green" onclick="initializeJSONStorage()">Initialize Storage</button>
+                                <button class="btn-sm btn-blue" onclick="autoSyncAllToJSON()">Sync All</button>
+                                <button class="btn-sm btn-outline" onclick="loadJSONStorage()">Refresh</button>
+                            </div>
+                        </div>
+                        <div class="stats-grid" id="json-storage-stats">
+                            <div class="stat-card">
+                                <div class="stat-val" id="json-total-files">-</div>
+                                <div class="stat-label">Total Files</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-val" id="json-total-size">-</div>
+                                <div class="stat-label">Total Size (MB)</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-val" id="json-total-folders">-</div>
+                                <div class="stat-label">Folders</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-val" id="json-sync-status" style="font-size:0.8rem;">-</div>
+                                <div class="stat-label">Auto-Sync</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:1rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+                            <button class="btn-sm btn-blue" onclick="createJSONSyncTriggers()">Enable Hourly Auto-Sync</button>
+                            <button class="btn-sm btn-gray" onclick="removeJSONSyncTriggers()">Disable Auto-Sync</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span>Manual Sheet Sync</span>
+                        </div>
+                        <div class="form-row">
+                            <div>
+                                <label>Sheet Name</label>
+                                <select id="json-sync-sheet">
+                                    <option value="Attendance">Attendance</option>
+                                    <option value="Expenses">Expenses</option>
+                                    <option value="Leave">Leave</option>
+                                    <option value="Users">Users</option>
+                                    <option value="Holidays">Holidays</option>
+                                    <option value="AuditLog">AuditLog</option>
+                                    <option value="FieldActivity">FieldActivity</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>File Name</label>
+                                <input type="text" id="json-sync-file" placeholder="data.json">
+                            </div>
+                            <div>
+                                <label>Subfolder</label>
+                                <input type="text" id="json-sync-folder" placeholder="Data/SheetName">
+                            </div>
+                            <div style="display:flex; align-items:flex-end;">
+                                <button class="btn-sm btn-green" onclick="syncSheetToJSON()">Sync to JSON</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span>Storage Folders</span>
+                        </div>
+                        <div class="table-wrap" id="json-folders-table">
+                            <p class="empty-state">Click "Initialize Storage" to create folder structure.</p>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span>Archive by Month</span>
+                        </div>
+                        <div class="form-row">
+                            <div>
+                                <label>Sheet Name</label>
+                                <select id="json-archive-sheet">
+                                    <option value="Attendance">Attendance</option>
+                                    <option value="Expenses">Expenses</option>
+                                    <option value="Leave">Leave</option>
+                                    <option value="AuditLog">AuditLog</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Month</label>
+                                <input type="month" id="json-archive-month">
+                            </div>
+                            <div style="display:flex; align-items:flex-end;">
+                                <button class="btn-sm btn-blue" onclick="archiveMonthToJSON()">Archive to JSON</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
         </div>
@@ -1953,7 +2054,7 @@
 // ============================================================
 // CONFIG & STATE
 // ============================================================
-const API = "https://script.google.com/macros/s/AKfycbyv7Bkj6AqJOt1L15stczhvQ2Am1J-7q5W-hHf73KNiZs1xiNbR752ZWVwJ2Xuy9ko/exec";
+const API = "https://script.google.com/macros/s/AKfycbxz36Zq0TWLPPxtpp-o_H1HsXtquqbBwLXiZW9-GFc7jyakqs8-2lFWaJl0rx1xVaAZ/exec";
 
 let user = null;
 let allUsersCache = [];
@@ -2846,6 +2947,7 @@ function switchAdminTab(tabId, el) {
     if (tabId === 'a-holidays') loadHolidays();
     if (tabId === 'a-departments') loadDepartments();
     if (tabId === 'a-fieldactivity') loadAdminFieldActivity();
+    if (tabId === 'a-jsonstorage') loadJSONStorage();
 }
 
 // ============================================================
@@ -4260,6 +4362,132 @@ async function drillFieldEmployee(email, name) {
     });
     h += '</table>';
     document.getElementById('admin-field-detail-table').innerHTML = h;
+}
+
+// ============================================================
+// ADMIN: JSON STORAGE MANAGEMENT
+// ============================================================
+async function loadJSONStorage() {
+    // Get storage stats
+    const statsRes = await post({ action: 'getStorageStats' });
+    if (statsRes.status === 'success' && statsRes.stats) {
+        document.getElementById('json-total-files').textContent = statsRes.stats.totalFiles || 0;
+        document.getElementById('json-total-size').textContent = statsRes.stats.totalSizeMB || 0;
+        document.getElementById('json-total-folders').textContent = (statsRes.stats.folders || []).length;
+        
+        // Display folders
+        const foldersTable = document.getElementById('json-folders-table');
+        if (statsRes.stats.folders && statsRes.stats.folders.length > 0) {
+            let h = '<table><tr><th>Folder Name</th><th>Files</th><th>Size (KB)</th></tr>';
+            statsRes.stats.folders.forEach(f => {
+                h += `<tr><td>${esc(f.name)}</td><td>${f.fileCount}</td><td>${(f.size / 1024).toFixed(2)}</td></tr>`;
+            });
+            h += '</table>';
+            foldersTable.innerHTML = h;
+        } else {
+            foldersTable.innerHTML = '<p class="empty-state">No folders found. Click "Initialize Storage" to create structure.</p>';
+        }
+    }
+}
+
+async function initializeJSONStorage() {
+    showLoader();
+    const res = await post({ action: 'initializeJSONStorage' });
+    hideLoader();
+    if (res.status === 'success') {
+        toast(res.message || 'JSON storage initialized!', 'success');
+        loadJSONStorage();
+    } else {
+        toast(res.message || 'Failed to initialize', 'error');
+    }
+}
+
+async function autoSyncAllToJSON() {
+    showLoader();
+    const res = await post({ action: 'autoSyncAllToJSON' });
+    hideLoader();
+    if (res.status === 'success') {
+        toast('All sheets synced to JSON!', 'success');
+        loadJSONStorage();
+    } else {
+        toast(res.message || 'Sync failed', 'error');
+    }
+}
+
+async function syncSheetToJSON() {
+    const sheetName = document.getElementById('json-sync-sheet').value;
+    const fileName = document.getElementById('json-sync-file').value || sheetName.toLowerCase() + '.json';
+    const subFolder = document.getElementById('json-sync-folder').value || 'Data/' + sheetName;
+    
+    showLoader();
+    const res = await post({ 
+        action: 'syncSheetToJSON', 
+        sheetName: sheetName, 
+        fileName: fileName, 
+        subFolder: subFolder 
+    });
+    hideLoader();
+    
+    if (res.status === 'success') {
+        toast('Sheet synced to JSON: ' + fileName, 'success');
+        loadJSONStorage();
+    } else {
+        toast(res.message || 'Sync failed', 'error');
+    }
+}
+
+async function archiveMonthToJSON() {
+    const sheetName = document.getElementById('json-archive-sheet').value;
+    const month = document.getElementById('json-archive-month').value;
+    
+    if (!month) {
+        toast('Please select a month', 'warning');
+        return;
+    }
+    
+    const subFolder = 'Archive/' + sheetName;
+    
+    showLoader();
+    const res = await post({ 
+        action: 'archiveMonthToJSON', 
+        sheetName: sheetName, 
+        month: month, 
+        subFolder: subFolder 
+    });
+    hideLoader();
+    
+    if (res.status === 'success') {
+        toast('Month archived to JSON: ' + sheetName + '-' + month + '.json', 'success');
+        loadJSONStorage();
+    } else {
+        toast(res.message || 'Archive failed', 'error');
+    }
+}
+
+async function createJSONSyncTriggers() {
+    showLoader();
+    const res = await post({ action: 'createJSONSyncTriggers' });
+    hideLoader();
+    
+    if (res.status === 'success') {
+        toast('Hourly auto-sync enabled! JSON files will update automatically.', 'success');
+        loadJSONStorage();
+    } else {
+        toast(res.message || 'Failed to enable auto-sync', 'error');
+    }
+}
+
+async function removeJSONSyncTriggers() {
+    showLoader();
+    const res = await post({ action: 'removeJSONSyncTriggers' });
+    hideLoader();
+    
+    if (res.status === 'success') {
+        toast('Auto-sync disabled. Removed ' + (res.removed || 0) + ' trigger(s).', 'success');
+        loadJSONStorage();
+    } else {
+        toast(res.message || 'Failed to disable auto-sync', 'error');
+    }
 }
 
 async function adminFieldDayDetail(email, date) {
